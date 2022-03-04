@@ -1,4 +1,4 @@
-# Efficient Hierarchical Exploration with Stable Subgoal Representation Learning
+# Active Hierarchical Exploration with Stable Subgoal Representation Learning
 
 ## Prerequisites
 
