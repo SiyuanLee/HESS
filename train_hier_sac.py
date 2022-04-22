@@ -2,11 +2,9 @@ import numpy as np
 import gym
 from arguments.arguments_hier_sac import get_args_ant
 from algos.hier_sac import hier_sac_agent
-from algos.hier_sac_predict import hier_sac_predict_agent
 
 # import goal_env
 from goal_env.mujoco import *
-from goal_env.robotics import *
 
 import random
 import torch
@@ -48,10 +46,7 @@ def launch(args):
     env_params['max_test_timesteps'] = test_env._max_episode_steps
 
     # create the ddpg agent to interact with the environment
-    if args.predict_intrinsic:
-        sac_trainer = hier_sac_predict_agent(args, env, env_params, test_env, test_env1, test_env2)
-    else:
-        sac_trainer = hier_sac_agent(args, env, env_params, test_env, test_env1, test_env2)
+    sac_trainer = hier_sac_agent(args, env, env_params, test_env, test_env1, test_env2)
     if args.eval:
         if not args.resume:
             print("random policy !!!")

@@ -7,7 +7,6 @@ from tensorboardX import SummaryWriter
 from models.networks import *
 from algos.replay_buffer import replay_buffer, replay_buffer_energy
 from algos.her import her_sampler
-from planner.goal_plan import *
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 import random
@@ -48,31 +47,6 @@ class hier_sac_agent:
         self.marker_set = ["v", "^", "<", ">", "1", "2", "3", "4", "8", "s", "p", "*"]
         self.color_set = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red',
                           'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
-        if args.test in ['AntMaze1Test-v1']:
-            if args.image:
-                print("load img trajectory !!!")
-                with open('fig/trajectory/' + 'img_maze_scale4_1.pkl', 'rb') as output:
-                    self.trajectory = pickle.load(output)
-            else:
-                with open('fig/trajectory/' + 'good_maze_rollout.pkl', 'rb') as output:
-                    self.trajectory = pickle.load(output)
-        elif args.test == 'AntPushTest-v1':
-            if args.image:
-                print("load img trajectory for AntPush !!!")
-                with open('fig/trajectory/' + 'img_push_hard5.pkl', 'rb') as output:
-                    self.trajectory = pickle.load(output)
-            else:
-                with open('fig/trajectory/' + 'good_maze_rollout.pkl', 'rb') as output:
-                    self.trajectory = pickle.load(output)
-        elif args.test == 'PointMaze1Test-v1':
-            if not args.image:
-                print("load trajectory for PointMaze !!!")
-                with open('fig/trajectory/' + 'point_oracle_trajectory.pkl', 'rb') as output:
-                    self.trajectory = pickle.load(output)
-            else:
-                self.trajectory = None
-        else:
-            self.trajectory = None
         T = self.env_params['max_timesteps']
         size = args.buffer_size // T
         self.candidate_idxs = np.array([[i, j] for i in range(size) for j in range(T - args.c + 1)])
@@ -581,8 +555,6 @@ class hier_sac_agent:
                 self.direct_grid_xy.update_occupied(positions)
                 coverage_ratio = self.direct_grid_xy.coverage()
                 print("coverage ratio", coverage_ratio)
-                if not self.learn_hi:
-                    self.eval_trajectory(epoch)
                 if self.test_env1 is not None:
                     eval_success1, _ = self._eval_hier_agent(env=self.test_env1)
                     eval_success2, _ = self._eval_hier_agent(env=self.test_env2)
@@ -609,7 +581,6 @@ class hier_sac_agent:
 
                 if self.args.save:
                     print("log_dir: ", self.log_dir)
-                    self.plot_exploration(epoch)
                     torch.save([self.hi_agent.critic.state_dict()], self.model_path + '/hi_critic_model.pt')
                     torch.save([self.low_critic_network.state_dict()], self.model_path + '/low_critic_model.pt')
                     torch.save(self.hi_buffer, self.model_path + '/hi_buffer.pt')
@@ -1276,19 +1247,6 @@ class hier_sac_agent:
         # plt.show()
         plt.close()
 
-    def eval_trajectory(self, epoch):
-        plt.figure(figsize=(12, 6))
-        obs_vec = np.array(self.trajectory)
-        self.plot_rollout(obs_vec, "XY_{}".format(epoch * self.env_params['max_timesteps']), 121)
-
-        obs_tensor = torch.Tensor(obs_vec[:, :self.hi_dim]).to(self.device)
-        features = self.representation(obs_tensor).detach().cpu().numpy()
-        self.plot_rollout(features, "Feature_{}".format(epoch * self.env_params['max_timesteps']), 122)
-
-        file_name = 'fig/latent1/rollout' + str(epoch) + '.png'
-        plt.savefig(file_name, bbox_inches='tight')
-        # plt.show()
-        plt.close()
 
     def plot_rollout(self, obs_vec, name, num, goal=None, hi_action_vec=None, no_axis=False, use_lim=False, fig=None):
         if fig is None:
@@ -1326,54 +1284,6 @@ class hier_sac_agent:
                         color='red', s=200, label='end')
             plt.legend(loc=2, bbox_to_anchor=(1.05, 1.0), fontsize=14, borderaxespad=0.)
 
-
-    def vis_learning_process(self, filename, epoch=0):
-        # plt.figure(figsize=(15, 6))
-        if epoch == 0:
-            obs_lst = []
-            for i in range(5):
-                with open('fig/trajectory/' + 'img_maze_scale4_{}.pkl'.format(i+1), 'rb') as output:
-                    obs_vec = pickle.load(output)
-                    obs_lst.append(obs_vec)
-            for i in range(50, 5000, 50):
-                plt.figure(figsize=(12, 6))
-                self.representation.load_state_dict(torch.load(self.args.resume_path + \
-                                                               '/phi_model_{}.pt'.format(i), map_location='cuda:1')[0])
-                for obs_vec in obs_lst:
-                    obs_tensor = torch.Tensor(obs_vec[:, :self.hi_dim]).to(self.device)
-                    features = self.representation(obs_tensor).detach().cpu().numpy()
-                    self.plot_rollout(features, "Feature_{}".format(i * self.env_params['max_timesteps']), 122,
-                                      no_axis=True)
-                file_name = 'fig/round2/rollout_' + str(i) + '.png'
-                plt.savefig(file_name, bbox_inches='tight', transparent=False)
-                plt.close()
-                # self.vis_hier_policy(epoch=i, load_obs=obs_vec)
-        else:
-            self.vis_hier_policy(epoch=epoch, load_obs=self.trajectory, path=self.fig_path)
-
-
-    def multi_eval(self):
-        current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        self.log_dir = 'runs/hier/' + str(self.args.env_name) + '/' + current_time + \
-                       "_C_" + str(self.args.c) + "_Image_" + str(self.args.image) + \
-                       "_Seed_" + str(self.args.seed) + "_Abs_" + str(self.args.abs_range) + \
-                       "_Subgoal_" + str(SUBGOAL_RANGE) + "_Early_" + str(self.early_stop_thres) + "_Old_" + str(
-            self.old_sample) + "_Res_5" + "_NoPhi_" + str(self.not_update_phi) + "_LearnG_" + str(self.learn_goal_space)
-        self.writer = SummaryWriter(log_dir=self.log_dir)
-        for i in range(50, 8050, 50):
-            try:
-                self.hi_agent.policy.load_state_dict(torch.load(self.args.resume_path + \
-                                                                '/hi_actor_{}.pt'.format(i), map_location='cuda:0')[0])
-                self.low_actor_network.load_state_dict(torch.load(self.args.resume_path + \
-                                                                  '/low_actor_{}.pt'.format(i), map_location='cuda:0')[0])
-            except:
-                print("Epoch:", i, " No such file !!!")
-            if self.test_env1 is not None:
-                eval_success1, _ = self._eval_hier_agent(env=self.test_env1)
-                self.writer.add_scalar('Success_rate/eval1_' + self.args.env_name,
-                                       eval_success1, i)
-            eval_success, _ = self._eval_hier_agent(env=self.test_env)
-            self.writer.add_scalar('Success_rate/hier_farthest_' + self.args.env_name, eval_success, i)
 
     def same_data_compare(self):
         with open('fig/final/' + "sampled_raw_states.pkl", 'rb') as output:
@@ -1497,366 +1407,6 @@ class hier_sac_agent:
         arr_std = np.std(record, ddof=1)
         print(self.args.env_name, arr_mean, arr_std)
 
-    def plot_exploration(self, epoch=0):
-        matplotlib.rcParams['figure.figsize'] = [10, 10]  # for square canvas
-        matplotlib.rcParams['figure.subplot.left'] = 0
-        matplotlib.rcParams['figure.subplot.bottom'] = 0
-        matplotlib.rcParams['figure.subplot.right'] = 1
-        matplotlib.rcParams['figure.subplot.top'] = 1
-        def construct_maze(maze_id='Maze'):
-            if maze_id == 'Push':
-                structure = [
-                    [1, 1, 1, 1, 1],
-                    [1, 0, 'r', 1, 1],
-                    [1, 0, 0, 0, 1],
-                    [1, 1, 0, 1, 1],
-                    [1, 1, 1, 1, 1],
-                ]
-            elif maze_id == 'Maze1':
-                structure = [
-                    [1, 1, 1, 1, 1],
-                    [1, 'r', 0, 0, 1],
-                    [1, 1, 1, 0, 1],
-                    [1, 0, 0, 0, 1],
-                    [1, 1, 1, 1, 1],
-                ]
-            elif maze_id == 'Fall':
-                structure = [
-                    [1, 1, 1, 1],
-                    [1, 'r', 0, 1],
-                    [1, 0, 0, 1],
-                    [1, 0, 0, 1],
-                    [1, 0, 0, 1],
-                    [1, 1, 1, 1],
-                ]
-            elif maze_id == 'Maze':
-                structure = [
-                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 0, 'r', 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1],
-                    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-                    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                ]
-            else:
-                raise NotImplementedError('The provided MazeId %s is not recognized' % maze_id)
-
-            return structure
-
-        def plot_map(maze_id="Maze1"):
-            walls = construct_maze(maze_id=maze_id)
-            contain_r = [1 if "r" in row else 0 for row in walls]
-            row_r = contain_r.index(1)
-            col_r = walls[row_r].index("r")
-            walls[row_r][col_r] = 0
-            walls = np.array(walls)
-
-            scaling = self.scaling
-            walls = resize_walls(walls, scaling)
-            plot_walls(walls, scaling, row_r, col_r)
-
-        def plot_walls(walls, scaling, row_r, col_r):
-            for (i, j) in zip(*np.where(walls)):
-                x = np.array([j, j + 1]) - (col_r + 0.5) * scaling
-                y0 = np.array([i, i]) - (row_r + 0.5) * scaling
-                y1 = np.array([i + 1, i + 1]) - (row_r + 0.5) * scaling
-                plt.fill_between(x, y0, y1, color='grey')
-
-        def resize_walls(walls, factor):
-            """Increase the environment by rescaling.
-
-            Args:
-              walls: 0/1 array indicating obstacle locations.
-              factor: (int) factor by which to rescale the environment."""
-
-            (height, width) = walls.shape
-            row_indices = np.array([i for i in range(height) for _ in range(factor)])
-            col_indices = np.array([i for i in range(width) for _ in range(factor)])
-            walls = walls[row_indices]
-            walls = walls[:, col_indices]
-            assert walls.shape == (factor * height, factor * width)
-            return walls
-
-        def save_figs(logdir, i, crop, maze_id="Maze1"):
-            fig = plt.figure(figsize=(18, 12))
-            transitions, _ = self.low_buffer.sample(1000)
-            if 'ag_record' in transitions.keys():
-                ag_real = transitions['ag_record'][:, :2]
-            else:
-                ag_real = transitions['obs'][:, :2]
-
-            ax = fig.add_subplot(2, 3, 1)
-            plot_map(maze_id)
-            if self.count_latent:
-                cm = plt.cm.get_cmap('RdYlBu')
-                count_xy = np.array(self.xy_hash.predict(ag_real)).astype(int)
-                plt.scatter(ag_real[:, 0], ag_real[:, 1], c=count_xy, cmap=cm, s=30, alpha=0.5, label='explored area')
-                xys_record = self.count_xy_record.copy()
-                total_xys = None
-                for xy_index, xy_record in enumerate(xys_record):
-                    xy_record = np.array(xy_record)
-                    if total_xys is None:
-                        total_xys = np.array(xy_record)
-                    else:
-                        try:
-                            total_xys = np.concatenate((total_xys, xy_record))
-                        except:
-                            print("xy_index, xy_record", xy_index, xy_record)
-
-                if len(total_xys) > 0:
-                    plt.scatter(total_xys[:, 0], total_xys[:, 1], s=30, alpha=0.2, color='green',
-                                label='subgoal')
-
-                if len(total_xys) > 0:
-                    count_xy = np.array(self.xy_hash.predict(total_xys)).astype(int)
-            else:
-                plt.scatter(ag_real[:, 0], ag_real[:, 1], color='green', s=30, alpha=0.2, label='explored area')
-            plt.legend(loc=2, fontsize=14, borderaxespad=0.)
-            plt.title('XY', fontsize=24)
-
-            ax = fig.add_subplot(2, 3, 2)
-            obs = transitions['obs']
-            obs_tensor = torch.Tensor(obs[:, :self.hi_dim]).to(self.device)
-            if self.pruned_phi is None:
-                features = self.representation(obs_tensor).detach().cpu().numpy()
-            else:
-                features = self.pruned_phi(obs_tensor).detach().cpu().numpy()
-            total_subgoals = None  # not distinguish subgoals at diff timestep
-            total_distances = None
-            if self.count_latent:
-                count = np.array(self.hash.predict(features)).astype(int)
-                # plot intrinsic rewards
-                if self.intrinsic_coeff > 0.:
-                    intrinsic_rewards = np.array(self.hash.predict_rewards(features)) * self.intrinsic_coeff
-                    for num in range(int(0.05 * len(intrinsic_rewards))):
-                        print_str = "%.2f" % intrinsic_rewards[num]
-                        ax.text(features[num, 0], features[num, 1], print_str, fontsize=10, color='#FF00FF', alpha=0.6)
-                    plt.scatter(features[:, 0], features[:, 1], c=intrinsic_rewards, cmap=cm, s=30, alpha=0.5,
-                                label='explored area')
-                    plt.colorbar()
-                else:
-                    plt.scatter(features[:, 0], features[:, 1], c=count, cmap=cm, s=30, alpha=0.5,
-                                label='explored area')
-                subgoals_record = self.subgoal_record.copy()
-                distances_record = self.distance_record.copy()
-                for subgoal_index, subgoal_record in enumerate(subgoals_record):
-                    subgoal_record = np.array(subgoal_record)
-                    distance_record = np.array(distances_record[subgoal_index])
-                    if total_subgoals is None:
-                        total_subgoals = np.array(subgoal_record)
-                        total_distances = distance_record
-                    else:
-                        try:
-                            total_subgoals = np.concatenate((total_subgoals, subgoal_record))
-                            total_distances = np.concatenate((total_distances, distance_record))
-                        except:
-                            print("subgoal_index, subgoal_record:", subgoal_index, subgoal_record)
-                if len(total_subgoals) > 0:
-                    plt.scatter(total_subgoals[:, 0], total_subgoals[:, 1], s=30, alpha=0.2,
-                                color='green',
-                                label='subgoal')
-                    for num in range(int(len(total_distances) * 0.3)):
-                        try:
-                            ax.text(total_subgoals[num, 0], total_subgoals[num, 1], "%.1f"%(total_distances[num]), fontsize=10, color='#FF00FF',
-                                alpha=0.6)
-                        except:
-                            print("len_total_subgoal, len_total_distances:", len(total_subgoals), len(total_distances))
-            else:
-                plt.scatter(features[:, 0], features[:, 1], color='green', s=30, alpha=0.2, label='explored area')
-                subgoals_record = self.subgoal_record.copy()
-                for subgoal_index, subgoal_record in enumerate(subgoals_record):
-                    subgoal_record = np.array(subgoal_record)
-                    if total_subgoals is None:
-                        total_subgoals = np.array(subgoal_record)
-                    else:
-                        try:
-                            total_subgoals = np.concatenate((total_subgoals, subgoal_record))
-                        except:
-                            print("subgoal_index, subgoal_record:", subgoal_index, subgoal_record)
-                if len(total_subgoals) > 0:
-                    plt.scatter(total_subgoals[:, 0], total_subgoals[:, 1], s=30, alpha=0.2,
-                                color='red',
-                                label='subgoal')
-                plt.legend(loc=2, fontsize=14, borderaxespad=0.)
-            plt.title('Feature', fontsize=24)
-
-
-            if self.intrinsic_coeff == 0.:
-                ax = fig.add_subplot(2, 3, 3)
-                if self.count_latent:
-                    count = np.array(self.hash.predict(features))
-                    plt.scatter(features[:, 0], features[:, 1], color='green', s=30, alpha=0.2, label='explored area')
-
-                if len(total_subgoals) > 0:
-                    subgoal_record = total_subgoals
-                    if len(subgoal_record) > 0:
-                        count_subgoal = np.array(self.hash.predict(subgoal_record)).astype(int)
-                        delta_count = count_xy - count_subgoal
-                        xy_larger = np.where(delta_count > 0)[0]
-                        plt.scatter(subgoal_record[xy_larger, 0], subgoal_record[xy_larger, 1], color='k', s=30, alpha=0.2,
-                                    label='xy > feature')
-                        xy_smaller = np.where(delta_count < 0)[0]
-                        plt.scatter(subgoal_record[xy_smaller, 0], subgoal_record[xy_smaller, 1], color='tab:orange', s=30, alpha=0.2,
-                                    label='xy < feature')
-                        random_index = np.random.choice(len(count_subgoal), int(0.2 * len(count_subgoal)))
-                        for num in random_index:
-                            # print_str = "({}, {})".format(count_subgoal[num], delta_count[num])
-                            if delta_count[num] > 0:
-                                color = 'tab:brown'
-                            else:
-                                color = 'tab:orange'
-                            ax.text(subgoal_record[num, 0], subgoal_record[num, 1], str(int(count_subgoal[num])), fontsize=10, color=color, alpha=0.6)
-                    plt.legend(loc=0, fontsize=14, borderaxespad=0.)
-                    plt.title('Feature Count ($\delta$=xy-feature)', fontsize=24)
-
-                # plot all history subgoals
-                if self.history_subgoal_coeff != 0:
-                    ax = fig.add_subplot(2, 3, 4)
-                    plot_map()
-                    if len(self.all_history_xy) > 1000:
-                        sampled_xy = random.sample(self.all_history_xy, 1000)
-                        sampled_xy = np.array(sampled_xy)
-                        cm = plt.cm.get_cmap('RdYlBu')
-                        count_xy = np.array(self.subgoal_xy_hash.predict(sampled_xy)).astype(int)
-                        plt.scatter(sampled_xy[:, 0], sampled_xy[:, 1], c=count_xy, cmap=cm, s=30, alpha=0.5,
-                                    label='history subgoals')
-                        if len(total_xys) > 0:
-                            plt.scatter(total_xys[:, 0], total_xys[:, 1], color='green', s=30, alpha=0.2,
-                                        label='current subgoals')
-                        plt.legend(loc=2, fontsize=14, borderaxespad=0.)
-                        plt.title('XY', fontsize=24)
-
-                    ax = fig.add_subplot(2, 3, 5)
-                    if len(self.all_history_subgoal) > 1000:
-                        sampled_index = np.random.choice(len(self.all_history_subgoal), 1000, replace=False)
-                        subgoal_array = np.array(self.all_history_subgoal)
-                        sampled_subgoal = subgoal_array[sampled_index]
-
-                        count = np.array(self.subgoal_hash.predict(sampled_subgoal)).astype(int)
-                        plt.scatter(sampled_subgoal[:, 0], sampled_subgoal[:, 1], c=count, cmap=cm, s=30, alpha=0.5,
-                                    label='history subgoals')
-                        if len(subgoal_record) > 0:
-                            plt.scatter(subgoal_record[:, 0], subgoal_record[:, 1], color='green', s=30, alpha=0.2,
-                                        label='current subgoals')
-                        plt.title('Feature', fontsize=24)
-
-                elif self.future_count_coeff > 0:
-                    ax = fig.add_subplot(2, 3, 4)
-                    if self.count_latent:
-                        plt.scatter(features[:, 0], features[:, 1], color='green', s=30, alpha=0.2, label='explored area')
-
-                    if len(total_subgoals) > 0:
-                        subgoal_record = total_subgoals
-                        if len(subgoal_record) > 0:
-                            count_subgoal = np.array(self.future_hash.predict(subgoal_record)).astype(int)
-                            plt.scatter(subgoal_record[:, 0], subgoal_record[:, 1], color='black', s=30,
-                                        alpha=0.2,
-                                        label='subgoals')
-                            for num in range(int(0.15 * len(count_subgoal))):
-                                ax.text(subgoal_record[num, 0], subgoal_record[num, 1], str(count_subgoal[num]), fontsize=10, color='#FF00FF',
-                                        alpha=0.6)
-                        plt.legend(loc=0, fontsize=14, borderaxespad=0.)
-                        plt.title('Future Count', fontsize=24)
-
-                # visualize the samples to train stable loss
-                if self.add_reg:
-                    ax = fig.add_subplot(2, 3, 5)
-                    plot_map(maze_id)
-                    if len(self.low_p) > 0:
-                        random_index_new = np.random.randint(len(self.low_p), size=1000)
-                        selected_new = self.low_p[random_index_new]
-                        selected_idx_new = self.cur_candidate_idxs[selected_new]
-                        episode_idxs_new = selected_idx_new[:, 0]
-                        t_samples_new = selected_idx_new[:, 1]
-
-                        episode_num = self.low_buffer.current_size
-                        ag_record_array = self.low_buffer.buffers['ag_record'][:episode_num]
-                        reg_obs = ag_record_array[episode_idxs_new, t_samples_new]
-
-                        plt.scatter(reg_obs[:, 0], reg_obs[:, 1], s=30, alpha=0.2, color='green',
-                                    label='low contrastive loss')
-                        plt.legend(loc=2, fontsize=14, borderaxespad=0.)
-                        plt.title('XY', fontsize=24)
-
-            plt.savefig(logdir + 'maze_uncropped_' + str(i) + '.png', bbox_inches='tight', transparent=False)
-            plt.close()
-
-            if crop:
-                img = cv2.imread(logdir + 'push_img_' + str(i) + '.png')
-                print(img.shape)
-                cropped = img[int(0.2 * img.shape[1]):int(0.78 * img.shape[1]),
-                          int(0.23 * img.shape[0]):int(0.8 * img.shape[0])]  # ?????[y0:y1, x0:x1]
-                cv2.imwrite(logdir + 'maze_' + str(i) + '.png', cropped)
-
-        def plot_training_trajectory(epoch, maze_id='Maze1'):
-            # plot a training trajectory
-            obs_vec = []
-            hi_action_vec = []
-            xy_vec = []
-            env = self.test_env
-            observation = env.reset()
-            obs = observation['observation']
-            ag_record = observation['achieved_goal']
-            obs_vec.append(obs.copy())
-            representation = self.representation
-            if self.args.image:
-                obs_vec[-1][:2] = ag_record[:self.real_goal_dim]
-            g = observation['desired_goal']
-
-            for num in range(self.env_params['max_test_timesteps']):
-                with torch.no_grad():
-                    act_obs, act_g = self._preproc_inputs(obs, g)
-                    if num % self.c == 0:
-                        hi_action, xy = self.select_by_count(obs[:self.hi_dim], num, epoch)
-                        # add some noise to selected subgoal
-                        if self.success_coeff != 0 and epoch > self.start_count_success:
-                            ag = self.representation(torch.Tensor(obs).to(self.device)).detach().cpu().numpy()[0]
-                            direction = hi_action - ag
-                            norm_direction = direction / np.linalg.norm(direction)
-                            hi_action = hi_action + self.delta_r * norm_direction
-                        hi_action_tensor = torch.tensor(hi_action, dtype=torch.float32).unsqueeze(0).to(self.device)
-                        hi_action_vec.append(hi_action)
-                        xy_vec.append(xy)
-                    action = self.explore_policy(act_obs[:, :self.low_dim], hi_action_tensor)
-                observation_new, rew, done, info = env.step(action)
-                obs = observation_new['observation']
-                ag_record = observation_new['achieved_goal']
-                obs_vec.append(obs.copy())
-                if self.args.image:
-                    obs_vec[-1][:2] = ag_record[:self.real_goal_dim]
-
-            fig = plt.figure(figsize=(12, 6))
-            obs_vec = np.array(obs_vec)
-            self.plot_rollout(obs_vec, "XY_{}".format(epoch * self.env_params['max_timesteps']), 1, goal=g, hi_action_vec=np.array(xy_vec),
-                              fig=fig)
-            plot_map(maze_id)
-
-            if self.args.image:
-                obs_vec[:, :2] = 0.
-            obs_tensor = torch.Tensor(obs_vec[:, :self.hi_dim]).to(self.device)
-            features = representation(obs_tensor).detach().cpu().numpy()
-            rest = (self.env_params['obs'] - self.env_params['goal']) * [0.]
-            g = np.concatenate((g, np.array(rest)))
-            g = torch.tensor(g, dtype=torch.float32).unsqueeze(0).to(self.device)
-            feature_goal = representation(g).detach().cpu().numpy()[0]
-            hi_action_vec = np.array(hi_action_vec)
-            self.plot_rollout(features, "Feature_{}".format(epoch * self.env_params['max_timesteps']), 2,
-                              feature_goal, hi_action_vec, fig=fig)
-
-            file_name = self.fig_path + '/train_rollout_' + str(epoch) + '.png'
-            plt.savefig(file_name, bbox_inches='tight', transparent=False)
-            plt.close()
-
-        save_figs(self.fig_path + '/', epoch, False, maze_id=self.maze_id)
-        if self.trajectory is not None:
-            self.vis_learning_process(filename=None, epoch=epoch)
-        if epoch > self.phi_interval:
-            plot_training_trajectory(epoch, maze_id=self.maze_id)
 
     def select_by_count(self, hi_obs, t, epoch):
         transitions, _ = self.low_buffer.sample(1000)
@@ -2095,14 +1645,4 @@ class hier_sac_agent:
         representation_loss = (min_dist + max_dist).mean()
         print("phi loss near start: ", representation_loss)
 
-    def eval_intrinsic_rewards(self):
-        self.representation.load_state_dict(torch.load(self.args.resume_path + \
-                                                       '/phi_model_{}.pt'.format(5000), map_location='cuda:1')[0])
-        self.hash = GridHashing(self.grid_scale, obs_processed_flat_dim=2)
-        state = self.low_buffer.get_all_data()['obs']
-        state = state.reshape(-1, state.shape[2])
-        obs_tensor = torch.Tensor(state[:, :self.hi_dim]).to(self.device)
-        features = self.representation(obs_tensor).detach().cpu().numpy()
-        self.hash.inc_hash(features)
-        self.plot_exploration(epoch=5000)
 
