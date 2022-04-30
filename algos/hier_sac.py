@@ -167,7 +167,7 @@ class hier_sac_agent:
         self.direct_grid_xy = DirectGrid(env, grid_scale * 0.2)
 
         # ablation study of intrinsic rewards
-        self.intrinsic_coeff = 1000.0  # set to zero, when action shaping
+        self.intrinsic_coeff = 0.0  # set to zero, when action shaping
         self.intrinsic_reward_log = []  # record intrinsic rewards
 
         # consider the min count for a trajectory

@@ -4,7 +4,7 @@
 
 # single goal, c=50
 python train_hier_sac.py --c 50 --abs_range 20  --env-name AntMaze1Test-v1 --test AntMaze1Test-v1 \
---weight_decay 1e-5 --device cuda:1 --seed 2
+--weight_decay 1e-5 --device cuda:0 --seed 6
 
 # single goal, c=50, image input
 python train_hier_sac.py --c 50 --abs_range 20  --env-name AntMaze1Test-v1 --test AntMaze1Test-v1 \
