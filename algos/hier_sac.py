@@ -23,7 +23,6 @@ import seaborn as sns
 sns.set_color_codes()
 import matplotlib
 import time
-import torch.nn.utils.prune as prune
 import copy
 
 
@@ -1534,70 +1533,8 @@ class hier_sac_agent:
         train_data = np.array([obs, obs_next, hi_obs, hi_obs_next])
 
 
-    def edge_representation(self):
-        self.low_buffer = torch.load(self.args.resume_path + '/low_buffer.pt', map_location='cuda:1')
-        print("load buffer !!!")
-        transitions, _ = self.low_buffer.sample(2000)
-        obs, ag_record = transitions['obs'], transitions['ag_record']
-        select_index = np.where(obs[:, 1] < -1.0)[0]
-        print("selected num", len(select_index))
 
-        obs_new = obs[select_index]
-        # obs_new = obs_new[obs_new[:, 0].argsort()]
-
-        # fix the xy position, only consider joints
-        obs_new[:, :2] = obs_new[0, :2]
-        # print("obs_new", obs_new)
-
-        for i in range(50, 5000, 50):
-            self.representation.load_state_dict(torch.load(self.args.resume_path + \
-                                                           '/phi_model_{}.pt'.format(i), map_location='cuda:1')[0])
-            self.pruned_phi = copy.deepcopy(self.representation)
-            # pruning phi
-            for name, module in self.pruned_phi.named_modules():
-                if isinstance(module, torch.nn.Linear):
-                    prune.l1_unstructured(module, name='weight', amount=0.8)
-            self.vis_hier_policy(epoch=i, load_obs=obs_new, path="fig/check_edge", representation=self.pruned_phi)
-
-    def plot_density(self):
-        self.low_buffer = torch.load(self.args.resume_path + '/low_buffer.pt', map_location='cuda:1')
-        self.representation.load_state_dict(torch.load(self.args.resume_path + \
-                                                       '/phi_model_{}.pt'.format(5000), map_location='cuda:1')[0])
-
-        # pruning phi
-        for name, module in self.representation.named_modules():
-            print("name", name)
-            print("module", module)
-            if isinstance(module, torch.nn.Linear):
-                prune.l1_unstructured(module, name='weight', amount=0.8)
-
-        print(dict(self.representation.named_buffers()).keys())
-        print("load buffer and phi !!!")
-
-        state = self.low_buffer.get_all_data()['obs']
-        state = state.reshape(-1, state.shape[2])
-        obs_tensor = torch.Tensor(state[:, :self.hi_dim]).to(self.device)
-        features = self.representation(obs_tensor).detach().cpu().numpy()
-        self.hash.inc_hash(features)
-
-
-        transitions, _ = self.low_buffer.sample(500)
-        state = transitions['obs']
-        state = np.array(state)
-        obs_tensor = torch.Tensor(state[:, :self.hi_dim]).to(self.device)
-        features = self.representation(obs_tensor).detach().cpu().numpy()
-        count_xy = np.array(self.hash.predict(features)).astype(int)
-
-        ax = plt.subplot(111, projection='3d')
-        cm = plt.cm.get_cmap('RdYlBu')
-        ax.scatter(features[:, 0], features[:, 1], count_xy, c=count_xy, cmap=cm)
-
-        plt.show()
-
-        bx = plt.subplot(111)
-        bx.scatter(features[:, 0], features[:, 1], c=count_xy, cmap=cm)
-        plt.show()
-
+    
     def cal_phi_loss(self):
         self.low_buffer = torch.load(self.args.resume_path + '/low_buffer.pt', map_location='cuda:1')
         self.representation.load_state_dict(torch.load(self.args.resume_path + \

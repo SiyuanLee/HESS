@@ -3,7 +3,7 @@
 ## Prerequisites
 
 * Python 3.6 or above
-* [PyTorch](https://pytorch.org/)
+* [PyTorch == 1.4.0](https://pytorch.org/)
 * [Gym](https://gym.openai.com/)
 * [Mujoco](https://www.roboti.us/license.html)
 
